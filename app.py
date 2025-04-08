@@ -1,113 +1,112 @@
-import os
-import pandas as pd
-import pickle as pkl
 import streamlit as st
-from sklearn.metrics  import accuracy_score
+import pandas as pd
+import pickle
+import os
 
-# Set page configuration
-st.set_page_config(page_title="Diabetes Prediction", layout="wide", page_icon="🧑‍⚕")
+# --- Load Model and Data ---
+st.set_page_config(page_title="Diet Recommendation System", layout="centered")
 
-# Load the saved diabetes model
-diabetes_model_path = "diabetes_model.sav"
+# Show working directory and files for debugging
+st.write("📂 Current directory:", os.getcwd())
+st.write("📄 Files found:", os.listdir())
 
-
-# Try loading the model with error handling
+# Load ML model
 try:
-    diabetes_model = pkl.load(open(diabetes_model_path, "rb"))
-    st.write("Model loaded successfully!")
-except Exception as e:
-    st.error(f"Error loading the model: {e}")
-    st.stop()  # Stop the app if the model fails to load
+    with open('food_model.pickle', 'rb') as file:
+        model = pickle.load(file)
+except FileNotFoundError:
+    st.error("❌ 'food_model.pickle' not found. Please make sure it's in the same folder as this script.")
+    st.stop()
 
-# Page title
-st.title("Diabetes Prediction using Machine Learning")
+# Load food data
+try:
+    food_data = pd.read_csv('done_food_data.csv')
+except FileNotFoundError:
+    st.error("❌ 'done_food_data.csv' not found. Please make sure it's in the same folder as this script.")
+    st.stop()
 
-# Getting user input
-col1, col2, col3 = st.columns(3)
+# Keywords to exclude for vegetarian filtering
+exclude_keywords = [
+    'Egg', 'Fish', 'meat', 'beef', 'Chicken', 'Beef', 'Deer', 'lamb', 'crab', 'pork',
+    'Turkey', 'flesh', 'Ostrich', 'Emu', 'cuttelfish', 'Seaweed', 'crayfish', 'shrimp', 'Octopus'
+]
 
-with col1:
-    pregnancies = st.text_input("Number of Pregnancies")
+# --- Sidebar Navigation ---
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["🏠 Home", "🍲 Muscle Gain", "🍛 Weight Gain", "🥗 Weight Loss", "🔍 Search Foods"])
 
-with col2:
-    glucose = st.text_input("Glucose Level")
+# --- Home: Prediction ---
+if page == "🏠 Home":
+    st.title("🔮 Food Category Prediction")
 
-with col3:
-    blood_pressure = st.text_input("Blood Pressure") 
+    st.write("Enter your nutritional values below to predict a suitable category:")
 
-with col1:
-    skin_thickness = st.text_input("Skin Thickness")
+    input_1 = st.number_input("Input 1", value=0.0)
+    input_2 = st.number_input("Input 2", value=0.0)
+    input_3 = st.number_input("Input 3", value=0.0)
 
-with col2:
-    insulin = st.text_input("Insulin Level")
-
-with col3:
-    bmi = st.text_input("BMI (Body Mass Index)")
-
-with col1:
-    diabetes_pedigree_function = st.text_input("Diabetes Pedigree Function")
-
-with col2:
-    age = st.text_input("Age")
-
-# Variable for storing the result
-diab_diagnosis = ""
-
-# Helper function to check if input is numeric
-def is_valid_input(value):
-    try:
-        float(value)
-        return True
-    except ValueError:
-        return False
-
-# Creating a button to predict the output
-if st.button("Diabetes Test Result"):
-    # Check if all inputs are valid
-    inputs = [pregnancies, glucose, blood_pressure, skin_thickness, insulin, bmi, diabetes_pedigree_function, age]
-    
-    # Check if any input is empty or invalid
-    if not all(is_valid_input(val) for val in inputs):
-        diab_diagnosis = "⚠ Please enter valid numeric values for all fields."
-    else:
+    if st.button("Predict"):
         try:
-            # Convert the user input into float
-            user_input = [
-                float(pregnancies),
-                float(glucose),
-                float(blood_pressure),
-                float(skin_thickness),
-                float(insulin),
-                float(bmi),
-                float(diabetes_pedigree_function),
-                float(age),
-            ]
-            
-            # Debug: Show the user input
-            st.write(f"User input for prediction: {user_input}")
-            
-            # Make the Prediction
-            diab_prediction = diabetes_model.predict([user_input])
+            inputs = [[input_1, input_2, input_3]]
+            prediction = model.predict(inputs)
 
-            # Debug: Show the prediction result
-            st.write(f"Prediction result: {diab_prediction}")
-            
-            # Display the result
-            if diab_prediction[0] == 1:
-                diab_diagnosis = "The person has Diabetes 🩸"
-            else:
-                diab_diagnosis = "The person does not have Diabetes ✅"
+            category_map = {
+                'Muscle_Gain': '💪 Muscle Gain',
+                'Weight_Gain': '🍛 Weight Gain',
+                'Weight_Loss': '🥗 Weight Loss'
+            }
 
+            result = category_map.get(prediction[0], '🥣 General Food')
+            st.success(f"Predicted Category: {result}")
         except Exception as e:
-            diab_diagnosis = f"⚠ Error in prediction: {str(e)}"
+            st.error(f"Prediction Error: {e}")
 
-# Show the prediction result
-st.subheader("Prediction Result:")
-st.write(diab_diagnosis)
-if st.button('show Model Accuracy'):
-    test_data=pd.read_csv(r"C:\Users\Siva\OneDrive\Desktop\proj1\diabetes.csv")
-    x_test=test_data.drop(columns=['Outcome'])
-    y_test=test_data['Outcome']
+# --- Filter Function ---
+def apply_filters(data):
+    vegetarian = st.checkbox("Vegetarian only")
+    iron = st.checkbox("High in Iron (>6 mg)")
+    calcium = st.checkbox("High in Calcium (>150 mg)")
 
-    y_pred=diabetes_model.predict(x_test)
-    accuracy=accuracy_score(y_test,y_pred)
-    st.write(f"model accuracy:{accuracy*100:.2f}%")
+    if iron:
+        data = data[data['Iron_mg'] > 6]
+    if calcium:
+        data = data[data['Calcium_mg'] > 150]
+    if vegetarian:
+        data = data[~data['Descrip'].str.contains('|'.join(exclude_keywords), case=False)]
+
+    return data
+
+def recommend_foods(category_name):
+    st.title(f"{category_name} Recommendations")
+    data = food_data[food_data['category'] == category_name.replace(" ", "_")]
+
+    data = apply_filters(data)
+
+    if st.button("Show Recommended Foods"):
+        if not data.empty:
+            foods = data['Descrip'].sample(n=min(5, len(data))).tolist()
+            st.write("### 🍽️ Top Picks:")
+            for food in foods:
+                st.write(f"- {food}")
+        else:
+            st.warning("No food found with selected filters.")
+
+# --- Muscle Gain Page ---
+if page == "🍲 Muscle Gain":
+    recommend_foods("Muscle Gain")
+
+# --- Weight Gain Page ---
+if page == "🍛 Weight Gain":
+    recommend_foods("Weight Gain")
+
+# --- Weight Loss Page ---
+if page == "🥗 Weight Loss":
+    recommend_foods("Weight Loss")
+
+# --- Search Page ---
+if page == "🔍 Search Foods":
+    st.title("🔍 Search and Sort Foods")
+    sort_by = st.selectbox("Sort by", food_data.columns.tolist(), index=food_data.columns.get_loc("Descrip"))
+    sorted_data = food_data.sort_values(by=sort_by)
+
+    st.dataframe(sorted_data.reset_index(drop=True), use_container_width=True)
